@@ -45,7 +45,7 @@
     "@cheatron/log": "*",
     "@cheatron/native": "*",
     "@cheatron/native-bindings": "*",
-    "@cheatron/nthread": "^1.0.0",
+    "@cheatron/nthread": "*",
     "@cheatron/win32-ext": "*"
   },
   "devDependencies": {
