@@ -33,7 +33,8 @@
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "bun run build",
-    "test": "bun test",
+    "test:simple": "bun test tests/target.test.ts tests/asm.test.ts tests/advanced-nthread.test.ts",
+    "test:all": "bun test",
     "lint": "eslint \"{src,tests}/**/*.ts\" --cache",
     "lint:fix": "eslint \"{src,tests}/**/*.ts\" --fix",
     "format": "prettier --write \"{src,tests}/**/*.ts\"",
