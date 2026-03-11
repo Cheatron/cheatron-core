@@ -1,7 +1,7 @@
 import * as Native from '@cheatron/native';
 import {
-  type CapturedThread,
   type AllocOptions,
+  CapturedThread,
   NThreadFile,
 } from '@cheatron/nthread';
 import { AdvancedProxyThread } from './advanced-proxy-thread';
@@ -15,16 +15,10 @@ import { resolveEncoding } from '@cheatron/native';
  * extra bound functions (loadLibraryA, loadLibraryW, etc.).
  */
 export class AdvancedNThread extends NThreadFile {
-  /**
-   * Hijacks a thread and returns an AdvancedProxyThread with extra helpers.
-   *
-   * @param thread Thread object or Thread ID to hijack.
-   * @returns `[AdvancedProxyThread, CapturedThread]`
-   */
-  override async inject(
-    thread: Native.Thread | number,
+  protected override async setupProxy(
+    cap: CapturedThread,
   ): Promise<[AdvancedProxyThread, CapturedThread]> {
-    const [proxy, captured] = await super.inject(thread);
+    const [proxy, captured] = await super.setupProxy(cap);
 
     // Re-type as AdvancedProxyThread (same prototype, declare-only extension)
     const advanced = proxy as unknown as AdvancedProxyThread;
@@ -46,6 +40,14 @@ export class AdvancedNThread extends NThreadFile {
     return [advanced, captured];
   }
 
+  override inject(
+    thread: Native.Thread | number | CapturedThread,
+  ): Promise<[AdvancedProxyThread, CapturedThread]> {
+    return super.inject(thread) as Promise<
+      [AdvancedProxyThread, CapturedThread]
+    >;
+  }
+
   /**
    * Loads a DLL into the target process.
    *
@@ -60,26 +62,39 @@ export class AdvancedNThread extends NThreadFile {
    */
   async loadLibrary(
     proxy: AdvancedProxyThread,
-    dllPath: string | Native.NativePointer,
-    wide: boolean = false,
+    dllPath: string | Native.NativeString | Native.NativePointer,
+    wide?: boolean,
   ): Promise<Native.NativePointer> {
     if (typeof dllPath === 'string') {
-      const [, loadFn] = resolveEncoding(
+      const [encodedBuf, loadFn] = resolveEncoding(
         proxy.loadLibraryA.bind(proxy),
         proxy.loadLibraryW.bind(proxy),
         dllPath,
+        wide,
       );
 
-      const strPtr = await this.allocString(proxy, dllPath, { readonly: true });
+      const strPtr = await proxy.alloc(encodedBuf.length, { readonly: true });
+      await proxy.write(strPtr, encodedBuf);
+
       const hModule = await loadFn(strPtr);
 
-      await proxy.free(strPtr);
-      return hModule;
-    } else if (wide) {
-      const hModule = await proxy.loadLibraryW(dllPath);
+      await proxy.dealloc(strPtr);
       return hModule;
     } else {
-      const hModule = await proxy.loadLibraryA(dllPath);
+      let w: boolean;
+      if (wide === undefined) {
+        if (dllPath instanceof Native.NativeString) {
+          w = dllPath.wide;
+        } else {
+          w = false;
+        }
+      } else {
+        w = wide;
+      }
+
+      const hModule = w
+        ? await proxy.loadLibraryW(dllPath)
+        : await proxy.loadLibraryA(dllPath);
       return hModule;
     }
   }
@@ -111,12 +126,11 @@ export class AdvancedNThread extends NThreadFile {
       }
 
       // Read the string from the target process memory via ProxyThread
-      const bytesToRead = lengthChars * 2; // UTF-16 is 2 bytes per char
-      const buf = await proxy.read(strPtr, bytesToRead);
+      const buf = await proxy.read(strPtr);
 
       return buf.toString('utf16le');
     } finally {
-      await proxy.free(strPtr);
+      await proxy.dealloc(strPtr);
     }
   }
 }

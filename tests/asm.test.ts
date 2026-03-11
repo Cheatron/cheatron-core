@@ -8,7 +8,7 @@ import {
   DisasmError,
   OpType,
   Reg,
-} from '../src';
+} from '@cheatron/core';
 
 describe('Asm – unified assembler / disassembler', () => {
   // -- assemble --

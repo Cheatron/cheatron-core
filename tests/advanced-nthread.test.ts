@@ -1,39 +1,7 @@
 import { expect, test, describe } from 'bun:test';
 import * as Native from '@cheatron/native';
-import { KeystoneX86 } from '@cheatron/keystone';
-import { AdvancedNThread, AdvancedProxyThread } from '../src';
-
-// -- helpers (same pattern as @cheatron/nthread tests) --
-
-interface SpawnedThread {
-  loopAddr: Native.NativePointer;
-  thread: Native.Thread;
-  tid: number;
-}
-
-async function spawnLoopThread(): Promise<SpawnedThread> {
-  const ks = new KeystoneX86();
-  const loopBuffer = Buffer.from(ks.asm('jmp .'));
-  const proc = Native.currentProcess;
-  const loopAddr = proc.memory.alloc(
-    loopBuffer.length,
-    null,
-    Native.MemoryState.COMMIT,
-    Native.MemoryProtection.EXECUTE_READWRITE,
-  );
-  proc.memory.write(loopAddr, loopBuffer);
-  const thread = Native.Thread.create(loopAddr, null);
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  return { loopAddr, thread, tid: thread.tid };
-}
-
-function cleanupThread(spawned: SpawnedThread): void {
-  if (spawned.thread.isValid()) {
-    spawned.thread.terminate(0);
-    spawned.thread.close();
-  }
-  Native.currentProcess.memory.free(spawned.loopAddr);
-}
+import { AdvancedNThread } from '@cheatron/core';
+import { spawnLoopThread, cleanupThread } from './helper';
 
 // -- tests --
 
@@ -91,9 +59,9 @@ describe('AdvancedNThread', () => {
       try {
         // Pre-allocate the string ourselves
         const dllName = 'user32.dll';
-        const strPtr = await nt.allocString(proxy, dllName, {
-          readonly: true,
-        });
+        const strBuf = Native.encodeString(dllName);
+        const strPtr = await proxy.alloc(strBuf.length);
+        await proxy.write(strPtr, strBuf);
 
         // Call with NativePointer directly
         const hModule = await nt.loadLibrary(proxy, strPtr);
@@ -102,7 +70,7 @@ describe('AdvancedNThread', () => {
         const localModule = Native.Module.get('user32.dll');
         expect(hModule.address).toBe(localModule.base.address);
 
-        await proxy.free(strPtr);
+        await proxy.dealloc(strPtr);
       } finally {
         await proxy.close();
         captured.close();
