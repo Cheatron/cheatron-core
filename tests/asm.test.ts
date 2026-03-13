@@ -42,8 +42,8 @@ describe('Asm – unified assembler / disassembler', () => {
     const insns = asm.disasm(buf, 0n);
 
     expect(insns.length).toBe(1);
-    expect(insns[0].mnemonic).toBe('mov');
-    expect(insns[0].size).toBe(3);
+    expect(insns[0]!.mnemonic).toBe('mov');
+    expect(insns[0]!.size).toBe(3);
   });
 
   it('should disassemble multiple instructions', () => {
@@ -52,8 +52,8 @@ describe('Asm – unified assembler / disassembler', () => {
     const insns = asm.disasm(buf, 0n);
 
     expect(insns.length).toBe(2);
-    expect(insns[0].mnemonic).toBe('nop');
-    expect(insns[1].mnemonic).toBe('int3');
+    expect(insns[0]!.mnemonic).toBe('nop');
+    expect(insns[1]!.mnemonic).toBe('int3');
   });
 
   it('should respect count parameter', () => {
@@ -67,7 +67,7 @@ describe('Asm – unified assembler / disassembler', () => {
     const buf = Buffer.from([0x90]);
     const insns = asm.disasm(buf, 0x4000n);
 
-    expect(insns[0].address).toBe(0x4000n);
+    expect(insns[0]!.address).toBe(0x4000n);
   });
 
   // -- roundtrip --
@@ -78,10 +78,10 @@ describe('Asm – unified assembler / disassembler', () => {
     const insns = asm.disasm(Buffer.from(bytes), 0n);
 
     expect(insns.length).toBe(4);
-    expect(insns[0].mnemonic).toBe('push');
-    expect(insns[1].mnemonic).toBe('mov');
-    expect(insns[2].mnemonic).toBe('pop');
-    expect(insns[3].mnemonic).toBe('ret');
+    expect(insns[0]!.mnemonic).toBe('push');
+    expect(insns[1]!.mnemonic).toBe('mov');
+    expect(insns[2]!.mnemonic).toBe('pop');
+    expect(insns[3]!.mnemonic).toBe('ret');
   });
 
   // -- detail mode --
@@ -93,9 +93,9 @@ describe('Asm – unified assembler / disassembler', () => {
     const buf = Buffer.from(a.asm('MOV RAX, RBX'));
     const insns = a.disasm(buf, 0n);
 
-    expect(insns[0].detail).toBeDefined();
-    expect(insns[0].detail!.x86.op_count).toBe(2);
-    expect(insns[0].detail!.x86.operands[0].type).toBe(OpType.REG);
+    expect(insns[0]!.detail).toBeDefined();
+    expect(insns[0]!.detail!.x86.op_count).toBe(2);
+    expect(insns[0]!.detail!.x86.operands[0]!.type).toBe(OpType.REG);
 
     a.close();
   });

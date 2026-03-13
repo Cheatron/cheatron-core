@@ -15,7 +15,6 @@ describe('Notepad Target Injection', () => {
 
       // Locate Notepad strictly by Window title Regex matching
       const target = Target.fromWindowName(/Notepad/i);
-      console.log(target);
 
       // Verify basic target properties
       expect(target.name.toLowerCase()).toContain('notepad.exe');

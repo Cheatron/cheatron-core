@@ -2,6 +2,7 @@ import * as Native from '@cheatron/native';
 import {
   type AllocOptions,
   CapturedThread,
+  type InjectOptions,
   NThreadFile,
 } from '@cheatron/nthread';
 import { AdvancedProxyThread } from './advanced-proxy-thread';
@@ -40,12 +41,90 @@ export class AdvancedNThread extends NThreadFile {
     return [advanced, captured];
   }
 
-  override inject(
+  override async inject(
     thread: Native.Thread | number | CapturedThread,
+    options?: InjectOptions,
   ): Promise<[AdvancedProxyThread, CapturedThread]> {
-    return super.inject(thread) as Promise<
+    return await (super.inject(thread, options) as Promise<
       [AdvancedProxyThread, CapturedThread]
-    >;
+    >);
+  }
+
+  /**
+   * Partially attempts injection into multiple threads concurrently,
+   * yielding successful results as they become available.
+   *
+   * Useful for "racing" injections or building a pool of hijacked threads.
+   *
+   * @param threads A list of threads or TIDs to attempt injection for.
+   * @param options Optional configuration including result count limit.
+   */
+  async *injectMany(
+    threads: (Native.Thread | number | CapturedThread)[],
+    options: { count?: number } = {},
+  ): AsyncGenerator<[AdvancedProxyThread, CapturedThread]> {
+    const limit = options.count ?? threads.length;
+    let yieldedCount = 0;
+
+    const activeResults: [AdvancedProxyThread, CapturedThread][] = [];
+    const controller = new AbortController();
+    let resolveSignal: (() => void) | null = null;
+    let isTerminated = false;
+
+    // Wrapper to track success and signal the generator
+    const startTask = async (t: Native.Thread | number | CapturedThread) => {
+      try {
+        const res = await this.inject(t, { signal: controller.signal });
+        if (isTerminated) {
+          // If the generator was already closed, immediately cleanup the late result
+          await res[0].close();
+          res[1].close();
+        } else {
+          activeResults.push(res);
+          resolveSignal?.();
+        }
+      } catch {
+        // Ignore single thread failures or abortions in the race
+      } finally {
+        finishedCount++;
+        resolveSignal?.();
+      }
+    };
+
+    let finishedCount = 0;
+    threads.forEach((t) => {
+      startTask(t);
+    });
+
+    try {
+      while (yieldedCount < limit && finishedCount < threads.length) {
+        if (activeResults.length > 0) {
+          const res = activeResults.shift()!;
+          yield res;
+          yieldedCount++;
+        } else {
+          // Wait for the next injection or for all tasks to finish
+          await new Promise<void>((resolve) => {
+            resolveSignal = resolve;
+          });
+          resolveSignal = null;
+        }
+      }
+    } finally {
+      isTerminated = true;
+      controller.abort();
+
+      // Cleanup any already succeeded but unconsumed results
+      for (const [proxy, captured] of activeResults) {
+        try {
+          await proxy.close();
+          captured.close();
+        } catch {
+          /* ignore cleanup errors */
+        }
+      }
+      activeResults.length = 0;
+    }
   }
 
   /**

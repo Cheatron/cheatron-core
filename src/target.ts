@@ -1,4 +1,6 @@
 import * as Native from '@cheatron/native';
+import { CapturedThread } from '@cheatron/nthread';
+import { AdvancedProxyThread } from './advanced-proxy-thread';
 
 /**
  * The Target class acts as a flexible data container for holding information about a selected remote
@@ -207,5 +209,104 @@ export class Target<
     snapshot.close();
 
     return new Target<S>(pid, foundName, initialState);
+  }
+
+  /**
+   * Enumerates all processes that have visible windows, grouping them by PID.
+   * Useful for high-level target selection in a CLI or GUI.
+   *
+   * @returns A list of Target objects discovered.
+   */
+  static enumerate(): Target[] {
+    const windows = Native.Window.getWindows();
+    const pidToWindows = new Map<number, Native.Window[]>();
+
+    for (const w of windows) {
+      try {
+        const title = w.getText();
+        if (!title || title.trim().length === 0) continue;
+
+        const [, pid] = w.getThreadProcessId();
+        if (pid === 0) continue; // Skip System Idle Process etc.
+
+        if (!pidToWindows.has(pid)) {
+          pidToWindows.set(pid, []);
+        }
+        pidToWindows.get(pid)!.push(w);
+      } catch {
+        // Some windows might be protected or close during enumeration
+        continue;
+      }
+    }
+
+    const snapshot = new Native.ToolhelpSnapshot(
+      Native.ToolhelpSnapshotFlag.SNAPPROCESS,
+    );
+    const processes = snapshot.getProcesses();
+    const results: Target[] = [];
+
+    for (const [pid, group] of pidToWindows.entries()) {
+      const procEntry = processes.find((p) => p.pid === pid);
+      if (!procEntry) continue;
+
+      const target = new Target(pid, procEntry.name);
+      for (const w of group) {
+        target.addWindow(w);
+      }
+      results.push(target);
+    }
+
+    snapshot.close();
+    return results.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /**
+   * Active injection sessions (channels) for this target.
+   */
+  private _channels: [AdvancedProxyThread, CapturedThread][] = [];
+
+  /**
+   * Returns a read-only list of active injection channels.
+   */
+  public get channels(): ReadonlyArray<[AdvancedProxyThread, CapturedThread]> {
+    return this._channels;
+  }
+
+  /**
+   * Attempts to inject into all threads of the target process in parallel,
+   * yielding successful channels as they arrive.
+   *
+   * @param options Optional configuration including result count limit.
+   */
+  public async *injectAll(
+    options: { count?: number } = {},
+  ): AsyncGenerator<[AdvancedProxyThread, CapturedThread]> {
+    const { AdvancedNThread } = await import('./advanced-nthread');
+    const nt = new AdvancedNThread();
+
+    const proc = Native.Process.open(this.pid);
+    const threads = proc.getThreadIds();
+    proc.close();
+
+    for await (const channel of nt.injectMany(threads, options)) {
+      this._channels.push(channel);
+      yield channel;
+    }
+  }
+
+  /**
+   * Detaches from all currently active injection channels.
+   */
+  public async detachAll(): Promise<void> {
+    const sessions = [...this._channels];
+    this._channels = [];
+    for (const [proxy, captured] of sessions) {
+      try {
+        await proxy.close();
+        captured.close();
+      } catch {
+        // Ignore individual cleanup errors
+      }
+    }
   }
 }
