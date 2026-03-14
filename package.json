@@ -1,6 +1,6 @@
 {
   "name": "@cheatron/core",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Umbrella package for the Cheatron ecosystem — single entry-point re-export of all Cheatron packages.",
   "keywords": [
     "cheatron",
